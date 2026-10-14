@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D Model Viewer</title>
+  <style>
+    :root { color-scheme: dark; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #191d20; color: #e8ecee; }
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 100%; height: 100vh; height: 100dvh; overflow: hidden; }
+    button { height: 34px; padding: 0 10px; color: inherit; background: rgb(37 42 46 / 88%); border: 1px solid #4b555c; border-radius: 4px; font: inherit; cursor: pointer; white-space: nowrap; backdrop-filter: blur(12px); }
+    button:hover, button[aria-pressed="true"], button[aria-expanded="true"] { background: rgb(70 81 88 / 94%); }
+    button:disabled { opacity: .45; cursor: default; }
+    #workspace, #stage, #viewer { position: fixed; inset: 0; width: 100%; height: 100%; }
+    #workspace, #stage { min-width: 0; min-height: 0; overflow: hidden; }
+    #viewer canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    header { position: absolute; z-index: 3; top: 12px; left: 50%; display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 24px); padding: 6px; overflow-x: auto; overflow-y: hidden; transform: translateX(-50%); border: 1px solid rgb(95 106 112 / 72%); border-radius: 6px; background: rgb(27 32 35 / 78%); backdrop-filter: blur(14px); scrollbar-width: none; }
+    header::-webkit-scrollbar { display: none; }
+    aside { --sidebar-inset: 12px; position: absolute; z-index: 3; top: 50%; left: var(--sidebar-inset); display: flex; flex-direction: column; gap: 8px; width: 270px; height: min(680px, calc(100% - 112px)); padding: 8px; overflow: visible; transform: translateY(-50%); border: 1px solid rgb(95 106 112 / 72%); border-radius: 6px; background: rgb(27 32 35 / 84%); backdrop-filter: blur(14px); transition: transform 180ms ease; }
+    aside.collapsed { transform: translate(calc(-100% - var(--sidebar-inset)), -50%); }
+    #sidebar-toggle { position: absolute; top: 50%; right: -29px; width: 29px; min-width: 29px; height: 46px; padding: 0; transform: translateY(-50%); border-radius: 0 5px 5px 0; font-size: 18px; }
+    .sidebar-section { display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-section.files { flex: 1 1 auto; }
+    .sidebar-section.structure { display: none; flex: 0 1 40%; border-top: 1px solid rgb(95 106 112 / 55%); padding-top: 8px; }
+    .sidebar-section.structure.has-parts { display: flex; }
+    .section-title { flex: none; margin: 0 0 6px; color: #aeb9bd; font-size: 11px; font-weight: 600; }
+    #model-list, #structure-tree { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+    #model-list { display: grid; gap: 3px; }
+    .model-item { width: 100%; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 8px; align-items: center; height: auto; min-height: 36px; text-align: left; border-color: transparent; background: transparent; }
+    .sequence { color: #a6b3b8; font-variant-numeric: tabular-nums; text-align: right; }
+    .model-name { overflow: hidden; text-overflow: ellipsis; }
+    .model-item[aria-current="true"] { background: #39464d; border-color: #53636b; }
+    .format { color: #a6b3b8; font-size: 10px; }
+    .tree-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+    .tree-children { margin: 1px 0 2px 16px; padding-left: 8px; border-left: 1px solid #536168; }
+    .tree-row { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 2px 4px; border-radius: 3px; }
+    .tree-row:hover { background: rgb(70 81 88 / 52%); }
+    .tree-row input { width: 14px; height: 14px; margin: 0; accent-color: #7fc3ae; flex: none; }
+    .tree-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tree-empty { color: #a6b3b8; padding: 6px 4px; font-size: 12px; }
+    #status { position: absolute; z-index: 2; inset: 0; display: grid; place-items: center; color: #c0c8cc; background: rgb(25 29 32 / 84%); pointer-events: none; }
+    #status[hidden] { display: none; }
+    footer { position: absolute; z-index: 3; bottom: 12px; left: 50%; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: min(520px, calc(100vw - 24px)); min-height: 30px; padding: 5px 10px; transform: translateX(-50%); color: #d2d9dc; border: 1px solid rgb(95 106 112 / 66%); border-radius: 4px; background: rgb(27 32 35 / 78%); backdrop-filter: blur(12px); font-size: 12px; }
+    #filename { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #dimensions { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    @media (max-width: 780px) {
+      header { top: 8px; gap: 4px; padding: 5px; }
+      button { height: 32px; padding: 0 8px; }
+      aside { --sidebar-inset: 8px; width: min(250px, calc(100vw - 48px)); height: calc(100% - 100px); }
+      footer { bottom: 8px; }
+    }
+  </style>
+  <script src="/static/o3dv/online3dviewer/o3dv.min.js?v=3"></script>
+</head>
+<body>
+  <header>
+    <button id="fit" type="button" title="Fit model">Fit</button>
+    <button data-view="front" type="button" title="Front view">Front</button>
+    <button data-view="back" type="button" title="Back view">Back</button>
+    <button data-view="left" type="button" title="Left view">Left</button>
+    <button data-view="right" type="button" title="Right view">Right</button>
+    <button data-view="top" type="button" title="Top view">Top</button>
+    <button data-view="bottom" type="button" title="Bottom view">Bottom</button>
+    <button data-view="iso" type="button" title="Isometric view">Iso</button>
+    <button id="tour" type="button" aria-pressed="false" title="Automatic rotation">Tour</button>
+    <button id="download" type="button" title="Download current model">Download</button>
+  </header>
+  <main id="workspace">
+    <aside>
+      <button id="sidebar-toggle" type="button" aria-label="Collapse file list" aria-expanded="true">‹</button>
+      <section class="sidebar-section files">
+        <h2 class="section-title">Files</h2>
+        <div id="model-list"></div>
+      </section>
+      <section class="sidebar-section structure">
+        <h2 class="section-title">Structure</h2>
+        <div id="structure-tree"><div class="tree-empty">Select a model to inspect its structure</div></div>
+      </section>
+    </aside>
+    <section id="stage" aria-label="3D model view">
+      <div id="viewer"></div>
+      <div id="status">Loading model directory...</div>
+    </section>
+  </main>
+  <footer><span id="filename"></span><span id="dimensions"></span></footer>
+  <script>
+    const statusNode = document.querySelector('#status');
+    const list = document.querySelector('#model-list');
+    const structureTree = document.querySelector('#structure-tree');
+    const structureSection = document.querySelector('.sidebar-section.structure');
+    const sidebar = document.querySelector('aside');
+    const viewerElement = document.querySelector('#viewer');
+    let embeddedViewer;
+    let currentModel;
+    let tourFrame = 0;
+    let tourAngle = 0;
+    let nodeVisibility = new Map();
+
+    function modelUrl(model) {
+      return '/models/' + model.path.split('/').map(encodeURIComponent).join('/');
+    }
+
+    function boundingSphere() {
+      return embeddedViewer.GetViewer().GetBoundingSphere(() => true);
+    }
+
+    function fitModel() {
+      const sphere = boundingSphere();
+      if (sphere) embeddedViewer.GetViewer().FitSphereToWindow(sphere, true);
+    }
+
+    function getNodeChildren(node) {
+      return Array.from({ length: node.ChildNodeCount() }, (_, index) => node.GetChildNode(index));
+    }
+
+    function collectNodeIds(node, ids = []) {
+      ids.push(node.GetId());
+      for (const child of getNodeChildren(node)) collectNodeIds(child, ids);
+      return ids;
+    }
+
+    function countMeshNodes(node) {
+      let count = node.MeshIndexCount() > 0 ? 1 : 0;
+      for (const child of getNodeChildren(node)) count += countMeshNodes(child);
+      return count;
+    }
+
+    function displayNodeName(value) {
+      if (Array.from(value).some(character => character.charCodeAt(0) > 255)) return value;
+      try {
+        const bytes = Uint8Array.from(value, character => character.charCodeAt(0));
+        const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        return /[\u3400-\u9fff]/.test(decoded) ? decoded : value;
+      } catch {
+        return value;
+      }
+    }
+
+    function updateTreeChecks() {
+      for (const checkbox of structureTree.querySelectorAll('input[data-node-id]')) {
+        const nodeId = Number(checkbox.dataset.nodeId);
+        const ids = JSON.parse(checkbox.dataset.descendantIds);
+        const visibleCount = ids.filter(id => nodeVisibility.get(id) !== false).length;
+        checkbox.checked = visibleCount === ids.length;
+        checkbox.indeterminate = visibleCount > 0 && visibleCount < ids.length;
+      }
+    }
+
+    function applyNodeVisibility() {
+      embeddedViewer.GetViewer().SetMeshesVisibility(userData => {
+        const instance = userData && userData.originalMeshInstance;
+        const nodeId = instance && instance.id ? instance.id.nodeId : undefined;
+        return nodeId === undefined || nodeVisibility.get(nodeId) !== false;
+      });
+      updateTreeChecks();
+    }
+
+    function renderNode(node, parent) {
+      const item = document.createElement('li');
+      const row = document.createElement('label');
+      row.className = 'tree-row';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.nodeId = String(node.GetId());
+      checkbox.dataset.descendantIds = JSON.stringify(collectNodeIds(node));
+      checkbox.checked = true;
+      const name = document.createElement('span');
+      name.className = 'tree-label';
+      name.textContent = displayNodeName(node.GetName()) || `Part ${node.GetId() + 1}`;
+      name.title = name.textContent;
+      row.append(checkbox, name);
+      item.append(row);
+      const children = getNodeChildren(node);
+      if (children.length) {
+        const childList = document.createElement('ul');
+        childList.className = 'tree-list tree-children';
+        for (const child of children) renderNode(child, childList);
+        item.append(childList);
+      }
+      checkbox.addEventListener('change', () => {
+        const visible = checkbox.checked;
+        for (const id of JSON.parse(checkbox.dataset.descendantIds)) nodeVisibility.set(id, visible);
+        applyNodeVisibility();
+      });
+      parent.append(item);
+    }
+
+    function renderStructure() {
+      nodeVisibility = new Map();
+      structureTree.innerHTML = '';
+      const model = embeddedViewer.GetModel();
+      const root = model ? model.GetRootNode() : null;
+      if (!root) {
+        structureSection.classList.remove('has-parts');
+        structureTree.innerHTML = '<div class="tree-empty">No structure available</div>';
+        return;
+      }
+      structureSection.classList.toggle('has-parts', countMeshNodes(root) > 1);
+      const roots = root.IsMeshNode() ? [root] : getNodeChildren(root);
+      const tree = document.createElement('ul');
+      tree.className = 'tree-list';
+      if (!root.IsMeshNode() && root.MeshIndexCount() > 0) roots.unshift(root);
+      for (const node of roots) renderNode(node, tree);
+      if (!roots.length) {
+        structureTree.innerHTML = '<div class="tree-empty">No structure available</div>';
+        return;
+      }
+      structureTree.append(tree);
+      for (const checkbox of structureTree.querySelectorAll('input[data-node-id]')) {
+        for (const id of JSON.parse(checkbox.dataset.descendantIds)) nodeVisibility.set(id, true);
+      }
+      updateTreeChecks();
+    }
+
+    function setPreset(name) {
+      const sphere = boundingSphere();
+      if (!sphere) return;
+      const center = sphere.center;
+      const radius = Math.max(sphere.radius, 1);
+      const directions = {
+        front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0],
+        right: [1, 0, 0], top: [0, 0, 1], bottom: [0, 0, -1],
+        iso: [1, -1, 0.85],
+      };
+      const direction = directions[name];
+      const length = Math.hypot(...direction);
+      const distance = radius * 2.7;
+      const eye = new OV.Coord3D(
+        center.x + direction[0] / length * distance,
+        center.y + direction[1] / length * distance,
+        center.z + direction[2] / length * distance,
+      );
+      const target = new OV.Coord3D(center.x, center.y, center.z);
+      embeddedViewer.GetViewer().SetCamera(
+        new OV.Camera(eye, target, new OV.Coord3D(0, 0, 1), 45),
+      );
+      fitModel();
+    }
+
+    function stopTour() {
+      if (tourFrame) cancelAnimationFrame(tourFrame);
+      tourFrame = 0;
+      document.querySelector('#tour').setAttribute('aria-pressed', 'false');
+    }
+
+    function animateTour() {
+      const sphere = boundingSphere();
+      if (!sphere) return stopTour();
+      tourAngle += 0.006;
+      const center = sphere.center;
+      const distance = Math.max(sphere.radius, 1) * 2.7;
+      const eye = new OV.Coord3D(
+        center.x + Math.cos(tourAngle) * distance,
+        center.y + Math.sin(tourAngle) * distance,
+        center.z + distance * 0.65,
+      );
+      embeddedViewer.GetViewer().SetCamera(
+        new OV.Camera(eye, new OV.Coord3D(center.x, center.y, center.z), new OV.Coord3D(0, 0, 1), 45),
+      );
+      tourFrame = requestAnimationFrame(animateTour);
+    }
+
+    function activateModel(model) {
+      if (!model || !embeddedViewer) return;
+      stopTour();
+      currentModel = model;
+      structureTree.innerHTML = '<div class="tree-empty">Loading structure...</div>';
+      statusNode.hidden = false;
+      statusNode.textContent = `Loading ${model.name}...`;
+      document.querySelector('#filename').textContent = `${model.path} · ${(model.bytes / 1024).toFixed(0)} KB`;
+      for (const button of list.querySelectorAll('.model-item')) {
+        button.setAttribute('aria-current', String(button.dataset.path === model.path));
+      }
+      document.querySelector('#dimensions').textContent = model.format;
+      embeddedViewer.LoadModelFromUrlList([modelUrl(model)]);
+    }
+
+    function addModel(model) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'model-item';
+      button.dataset.path = model.path;
+      button.setAttribute('aria-current', 'false');
+      const sequence = document.createElement('span');
+      sequence.className = 'sequence';
+      sequence.textContent = `${list.childElementCount + 1}.`;
+      const name = document.createElement('span');
+      name.className = 'model-name';
+      name.textContent = model.name;
+      name.title = model.path;
+      const format = document.createElement('span');
+      format.className = 'format';
+      format.textContent = model.format;
+      button.append(sequence, name, format);
+      button.addEventListener('click', () => activateModel(model));
+      list.append(button);
+    }
+
+    async function start() {
+      if (!window.OV) throw new Error('Failed to load Online 3D Viewer');
+      embeddedViewer = new OV.EmbeddedViewer(viewerElement, {
+        backgroundColor: new OV.RGBAColor(25, 29, 32, 255),
+        defaultColor: new OV.RGBColor(178, 194, 194),
+        onModelLoaded: () => { statusNode.hidden = true; renderStructure(); fitModel(); },
+        onModelLoadFailed: () => { statusNode.textContent = 'Failed to load model or unsupported format'; },
+      });
+      new ResizeObserver(() => embeddedViewer.Resize()).observe(viewerElement);
+      const response = await fetch('/api/models');
+      if (!response.ok) throw new Error('Failed to read model directory');
+      const models = await response.json();
+      for (const model of models) addModel(model);
+      if (!models.length) {
+        statusNode.textContent = 'No supported model files found in this directory or its subdirectories';
+        return;
+      }
+      document.querySelector('#sidebar-toggle').addEventListener('click', event => {
+        const collapsed = sidebar.classList.toggle('collapsed');
+        event.currentTarget.textContent = collapsed ? '›' : '‹';
+        event.currentTarget.setAttribute('aria-expanded', String(!collapsed));
+        event.currentTarget.setAttribute('aria-label', collapsed ? 'Expand file list' : 'Collapse file list');
+      });
+      document.querySelector('#fit').addEventListener('click', fitModel);
+      for (const button of document.querySelectorAll('[data-view]')) {
+        button.addEventListener('click', () => setPreset(button.dataset.view));
+      }
+      document.querySelector('#tour').addEventListener('click', event => {
+        if (tourFrame) return stopTour();
+        event.currentTarget.setAttribute('aria-pressed', 'true');
+        animateTour();
+      });
+      viewerElement.addEventListener('pointerdown', stopTour);
+      document.querySelector('#download').addEventListener('click', () => {
+        if (currentModel) window.location.href = modelUrl(currentModel);
+      });
+      activateModel(models[0]);
+    }
+
+    start().catch(error => { statusNode.textContent = error.message; });
+  </script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sin3dviewer"
+description = "A browser-based viewer for local 3D model directories"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "sintrb" }]
+keywords = ["3d", "cad", "viewer", "step", "stl"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Graphics :: 3D Rendering",
+]
+dependencies = []
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = ["build"]
+
+[project.scripts]
+sin3dviewer = "sin3dviewer.server:main"
+
+[project.urls]
+Homepage = "https://github.com/sintrb/sin3dviewer"
+Repository = "https://github.com/sintrb/sin3dviewer"
+Issues = "https://github.com/sintrb/sin3dviewer/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+license-files = ["LICENSE"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "sin3dviewer.__version__" }
+
+[tool.setuptools.package-data]
+sin3dviewer = ["data/viewer.html", "data/static/o3dv/**/*"]

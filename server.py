@@ -1,0 +1,12 @@
+"""Compatibility launcher for running the viewer from a source checkout."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+
+from sin3dviewer.server import main
+
+
+if __name__ == "__main__":
+    main()
