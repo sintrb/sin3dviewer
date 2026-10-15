@@ -18,7 +18,7 @@ class ModelCatalogTests(unittest.TestCase):
 
             self.assertEqual(
                 model_catalog(root),
-                [{"name": "part.STEP", "path": "nested/part.STEP", "format": "STEP", "bytes": 4}],
+                [{"name": "part.STEP", "path": "nested/part.STEP", "format": "STEP", "bytes": 4, "modified": (root / "nested" / "part.STEP").stat().st_mtime}],
             )
 
 

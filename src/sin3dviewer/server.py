@@ -36,6 +36,7 @@ def model_catalog(model_dir):
                     "path": relative,
                     "format": path.suffix[1:].upper(),
                     "bytes": path.stat().st_size,
+                    "modified": path.stat().st_mtime,
                 }
             )
         except (OSError, ValueError):
